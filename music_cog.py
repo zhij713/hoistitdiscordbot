@@ -3,6 +3,10 @@ import discord
 from discord.ext import commands
 #from youtube_dl import YoutubeDL
 from yt_dlp import YoutubeDL
+from googleapiclient.discovery import build
+import os
+
+yt_key = os.getenv('YT_KEY')
 
 class music_cog(commands.Cog):
     def __init__(self, bot):
@@ -17,13 +21,42 @@ class music_cog(commands.Cog):
 
         self.vc = None
     
+
+    def query_yt(self, query):
+        youtube_api_key = yt_key
+        youtube = build('youtube', 'v3', developerKey=youtube_api_key)
+
+        search_response = youtube.search().list(
+            part='id',
+            q=query,
+            type='video',
+            maxResults=1
+        ).execute()
+        print(f"Search response: {search_response}")
+
+        if 'items' in search_response:
+            try:
+                video_id = search_response['items'][0]['id']['videoId']
+                video_url = f'https://www.youtube.com/watch?v={video_id}'
+                return video_url
+            except Exception:
+                return None
+
+        return None
+
     def search_yt(self, item):
+
+        if not item.startswith("https://"):
+            item = self.query_yt(item)
+        
+        #print(f"Item: {item}") #DEBUGGING
         with YoutubeDL(self.YDL_OPTIONS) as ydl:
             try:
                 song_info = ydl.extract_info(item, download=False)
             except Exception:
                 return False
         return {'source': song_info['url'], 'title':song_info['title']}
+    
     def play_next(self):
         if len(self.music_queue) > 0:
             self.is_playing = True
@@ -68,7 +101,7 @@ class music_cog(commands.Cog):
         else:
             song = self.search_yt(query)
             if type(song) == type(True):
-                await ctx.send("Couldnt download song, wrong format")
+                await ctx.send("Couldn't get song!")
             else:
                 await ctx.send("Song added to queue")
                 self.music_queue.append([song, voice_channel])
