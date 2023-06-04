@@ -18,6 +18,8 @@ class music_cog(commands.Cog):
         self.YDL_OPTIONS = {'format': 'bestaudio'}
         self.FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
+        self.is_looping = False
+
 
         self.vc = None
     
@@ -32,7 +34,7 @@ class music_cog(commands.Cog):
             type='video',
             maxResults=1
         ).execute()
-        print(f"Search response: {search_response}")
+        
 
         if 'items' in search_response:
             try:
@@ -55,20 +57,25 @@ class music_cog(commands.Cog):
                 song_info = ydl.extract_info(item, download=False)
             except Exception:
                 return False
-        return {'source': song_info['url'], 'title':song_info['title']}
+        #print(f"DUration: {song_info['duration']}")
+        return {'source': song_info['url'], 'title':song_info['title'], 'duration': song_info['duration']}
     
     def play_next(self):
         if len(self.music_queue) > 0:
-            self.is_playing = True
+            # If loop is not active, remove the current song from the queue
+            if not self.is_looping:
+                self.music_queue.pop(0)
 
-            m_url = self.music_queue[0][0]['source']
+            # If there are still songs left in the queue, play the next one
+            if len(self.music_queue) > 0:
+                self.is_playing = True
 
-            self.music_queue.pop(0)
+                m_url = self.music_queue[0][0]['source']
 
-            self.vc.play(discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
+                self.vc.play(discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
         else:
             self.is_playing = False
-        
+
     async def play_music(self, ctx):
         if len(self.music_queue) > 0:
             self.is_playing = True
@@ -82,13 +89,17 @@ class music_cog(commands.Cog):
                     return
             else:
                 await self.vc.move_to(self.music_queue[0][1])
-            
-            self.music_queue.pop(0)
 
-            self.vc.play(discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
+            while True:
+                self.vc.play(discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
+                await asyncio.sleep(self.music_queue[0][0]['duration'])
+
+                # Break the loop if not in loop mode
+                if not self.is_looping:
+                    break
         else:
             self.is_playing = False
-    
+
     @commands.command(name="play",aliases=["p","playing"], help="Play the selected song from Youtube")
     async def play(self, ctx, *args):
         query = " ".join(args)
@@ -132,7 +143,9 @@ class music_cog(commands.Cog):
     async def skip(self, ctx, *args):
         if self.vc != None and self.vc:
             self.vc.stop()
-            await self.play_music(ctx)
+        if len(self.music_queue) > 0:
+            self.music_queue.pop(0)
+        await self.play_music(ctx)
 
     @commands.command(name="queue",aliases=["q"], help="Displays all songs in queue")
     async def queue(self, ctx):
@@ -158,3 +171,14 @@ class music_cog(commands.Cog):
         self.is_playing = False
         self.is_paused = False
         await self.vc.disconnect()
+    
+    @commands.command(name="loop", help="Toggle loop mode (usage: *loop or *loop off)")
+    async def loop(self, ctx, *args):
+        if len(args) > 0 and args[0] == "off":
+            self.is_looping = False
+            await ctx.send("Looping turned off")
+        elif self.is_looping:
+            await ctx.send("Looping already turned on")
+        else:
+            self.is_looping = True
+            await ctx.send("Looping turned on")
