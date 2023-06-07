@@ -5,6 +5,7 @@ from discord.ext import commands
 from yt_dlp import YoutubeDL
 from googleapiclient.discovery import build
 import os
+import asyncio
 
 yt_key = os.getenv('YT_KEY')
 
